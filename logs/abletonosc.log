@@ -1,0 +1,11 @@
+(2022-12-07 13:53:00,225) [INFO] Starting OSC server (local ('0.0.0.0', 11000), response port 11001)
+(2022-12-07 13:53:29,843) [INFO] AbletonOSC: Unknown OSC address: /live/scene/fire
+(2022-12-07 13:53:31,173) [INFO] Calling method for song: start_playing (params [])
+(2022-12-07 13:53:33,762) [INFO] AbletonOSC: Unknown OSC address: /live/scene/fire
+(2022-12-07 13:53:41,182) [INFO] AbletonOSC: Unknown OSC address: /live/scene/fire
+(2022-12-07 14:01:47,578) [INFO] Disconnecting...
+(2022-12-07 14:01:56,848) [INFO] Starting OSC server (local ('0.0.0.0', 11000), response port 11001)
+(2022-12-07 14:03:25,706) [INFO] AbletonOSC: Unknown OSC address: /live/scene/fire
+(2022-12-07 14:03:28,106) [INFO] Calling method for song: start_playing (params [])
+(2022-12-07 14:05:22,159) [INFO] AbletonOSC: Unknown OSC address: /live/scene/fire
+(2022-12-07 14:05:48,648) [INFO] AbletonOSC: Unknown OSC address: /live/scene/fire

@@ -11,4 +11,5 @@ from .clip import ClipHandler
 from .clip_slot import ClipSlotHandler
 from .track import TrackHandler
 from .device import DeviceHandler
+from .scene import SceneHandler
 from .constants import OSC_LISTEN_PORT, OSC_RESPONSE_PORT
