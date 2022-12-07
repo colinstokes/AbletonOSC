@@ -1,11 +1,17 @@
+import Live
 from functools import partial
 from typing import Tuple, Any
+
 from .handler import AbletonOSCHandler
 
 class SongHandler(AbletonOSCHandler):
+    def __init__(self, manager):
+        super().__init__(manager)
+        self.class_identifier = "song"
+
     def init_api(self):
         #--------------------------------------------------------------------------------
-        # Init callbacks for Set: methods
+        # Callbacks for Song: methods
         #--------------------------------------------------------------------------------
         for method in [
             "continue_playing",
@@ -33,7 +39,7 @@ class SongHandler(AbletonOSCHandler):
             self.osc_server.add_handler("/live/song/%s" % method, callback)
 
         #--------------------------------------------------------------------------------
-        # Init callbacks for Set: properties
+        # Callbacks for Song: properties (read/write)
         #--------------------------------------------------------------------------------
         properties_rw = [
             "arrangement_overdub",
@@ -54,6 +60,10 @@ class SongHandler(AbletonOSCHandler):
             "start_time",
             "tempo"
         ]
+
+        #--------------------------------------------------------------------------------
+        # Callbacks for Song: properties (read-only)
+        #--------------------------------------------------------------------------------
         properties_r = [
             "can_redo",
             "can_undo",
@@ -67,19 +77,76 @@ class SongHandler(AbletonOSCHandler):
         for prop in properties_rw:
             self.osc_server.add_handler("/live/song/set/%s" % prop, partial(self._set_property, self.song, prop))
 
-        def song_get_num_tracks(song, params: Tuple[Any] = ()):
-            return len(song.tracks),
-        def song_get_num_scenes(song, params: Tuple[Any] = ()):
-            return len(song.scenes),
+        #--------------------------------------------------------------------------------
+        # Callbacks for Song: Track properties
+        #--------------------------------------------------------------------------------
+        self.osc_server.add_handler("/live/song/get/num_tracks", lambda _: (len(self.song.tracks),))
 
-        self.osc_server.add_handler("/live/song/get/num_tracks", partial(song_get_num_tracks, self.song))
-        self.osc_server.add_handler("/live/song/get/num_scenes", partial(song_get_num_scenes, self.song))
+        def song_get_track_names(params):
+            if len(params) == 0:
+                track_index_min, track_index_max = 0, len(self.song.tracks)
+            else:
+                track_index_min, track_index_max = params
+            return tuple(self.song.tracks[index].name for index in range(track_index_min, track_index_max))
+        self.osc_server.add_handler("/live/song/get/track_names", song_get_track_names)
 
-        def song_get_cue_points(song, params: Tuple[Any] = ()):
+        def song_get_track_data(params):
+            """
+            Retrieve one more properties of a block of tracks and their clips.
+            Properties must be of the format track.property_name or clip.property_name.
+
+            For example:
+                /live/song/get/track_data 0 12 track.name clip.name clip.length
+
+            Queries tracks 0..11, and returns a list of values comprising:
+
+            [track_0_name, clip_0_0_name,   clip_0_1_name,   ... clip_0_7_name,
+                           clip_1_0_length, clip_0_1_length, ... clip_0_7_length,
+             track_1_name, clip_1_0_name,   clip_1_1_name,   ... clip_1_7_name, ...]
+            """
+            track_index_min, track_index_max, *properties = params
+            rv = []
+            for track_index in range(track_index_min, track_index_max):
+                track = self.song.tracks[track_index]
+                for prop in properties:
+                    obj, property_name = prop.split(".")
+                    if obj == "track":
+                        value = getattr(track, property_name)
+                        if isinstance(value, Live.Track.Track):
+                            #--------------------------------------------------------------------------------
+                            # Map Track objects to their track_index to return via OSC
+                            #--------------------------------------------------------------------------------
+                            value = list(self.song.tracks).index(value)
+                        rv.append(value)
+                    elif obj == "clip":
+                        for clip_slot in track.clip_slots:
+                            if clip_slot.clip is not None:
+                                rv.append(getattr(clip_slot.clip, property_name))
+                            else:
+                                rv.append(None)
+            return tuple(rv)
+        self.osc_server.add_handler("/live/song/get/track_data", song_get_track_data)
+
+        #--------------------------------------------------------------------------------
+        # Callbacks for Song: Scene properties
+        #--------------------------------------------------------------------------------
+        self.osc_server.add_handler("/live/song/get/num_scenes", lambda _: (len(self.song.scenes),))
+
+        def song_get_scene_names(params):
+            if len(params) == 0:
+                scene_index_min, scene_index_max = 0, len(self.song.scenes)
+            else:
+                scene_index_min, scene_index_max = params
+            return tuple(self.song.scenes[index].name for index in range(scene_index_min, scene_index_max))
+        self.osc_server.add_handler("/live/song/get/scene_names", song_get_scene_names)
+
+        #--------------------------------------------------------------------------------
+        # Callbacks for Song: Cue point properties
+        #--------------------------------------------------------------------------------
+        def song_get_cue_points(song, _):
             cue_points = song.cue_points
             cue_point_pairs = [(cue_point.name, cue_point.time) for cue_point in cue_points]
-            rv = (element for pair in cue_point_pairs for element in pair)
-            return rv
+            return (element for pair in cue_point_pairs for element in pair)
         self.osc_server.add_handler("/live/song/get/cue_points", partial(song_get_cue_points, self.song))
 
         def song_jump_to_cue_point(song, params: Tuple[Any] = ()):
@@ -94,13 +161,19 @@ class SongHandler(AbletonOSCHandler):
         self.osc_server.add_handler("/live/song/cue_point/jump", partial(song_jump_to_cue_point, self.song))
 
         #--------------------------------------------------------------------------------
-        # /live/song/beat listener
+        # Listener for /live/song/beat
         #--------------------------------------------------------------------------------
         self.last_song_time = -1.0
-        def song_time_changed():
-            # If song has rewound or skipped to next beat, sent a /live/beat message
-            if (self.song.current_song_time < self.last_song_time) or \
-                    (int(self.song.current_song_time) > int(self.last_song_time)):
-                self.osc_server.send("/live/song/beat", (int(self.song.current_song_time),))
-            self.last_song_time = self.song.current_song_time
-        self.song.add_current_song_time_listener(song_time_changed)
+        self.song.add_current_song_time_listener(self.song_time_changed)
+
+    def song_time_changed(self):
+        #--------------------------------------------------------------------------------
+        # If song has rewound or skipped to next beat, sent a /live/beat message
+        #--------------------------------------------------------------------------------
+        if (self.song.current_song_time < self.last_song_time) or \
+                (int(self.song.current_song_time) > int(self.last_song_time)):
+            self.osc_server.send("/live/song/beat", (int(self.song.current_song_time),))
+        self.last_song_time = self.song.current_song_time
+
+    def clear_api(self):
+        self.song.remove_current_song_time_listener(self.song_time_changed)

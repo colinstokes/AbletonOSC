@@ -2,6 +2,10 @@ from typing import Tuple, Any
 from .handler import AbletonOSCHandler
 
 class DeviceHandler(AbletonOSCHandler):
+    def __init__(self, manager):
+        super().__init__(manager)
+        self.class_identifier = "device"
+
     def init_api(self):
         def create_device_callback(func, *args):
             def device_callback(params: Tuple[Any]):
@@ -55,7 +59,7 @@ class DeviceHandler(AbletonOSCHandler):
             return tuple(parameter.max for parameter in device.parameters)
 
         def device_set_parameters_value(device, params: Tuple[Any] = ()):
-            for index, value in params:
+            for index, value in enumerate(params):
                 device.parameters[index].value = value
 
         self.osc_server.add_handler("/live/device/get/num_parameters", create_device_callback(device_get_num_parameters))

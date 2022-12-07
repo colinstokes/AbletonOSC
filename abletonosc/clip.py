@@ -3,6 +3,10 @@ from .handler import AbletonOSCHandler
 import Live
 
 class ClipHandler(AbletonOSCHandler):
+    def __init__(self, manager):
+        super().__init__(manager)
+        self.class_identifier = "clip"
+
     def init_api(self):
         def create_clip_callback(func, *args, pass_clip_index=False):
             """
@@ -40,6 +44,7 @@ class ClipHandler(AbletonOSCHandler):
             "is_audio_clip",
             "is_playing",
             "is_recording",
+            "length",
             "playing_position"
         ]
         properties_rw = [
@@ -48,7 +53,8 @@ class ClipHandler(AbletonOSCHandler):
             "name",
             "pitch_coarse",
             "pitch_fine",
-            "looping"
+            "looping",
+            "warping"
         ]
 
         for method in methods:
@@ -68,7 +74,7 @@ class ClipHandler(AbletonOSCHandler):
 
         def clip_get_notes(clip, params: Tuple[Any] = ()):
             notes = clip.get_notes(0, 0, clip.length, 127)
-            return (item for sublist in notes for item in sublist)
+            return tuple(item for sublist in notes for item in sublist)
 
         def clip_add_notes(clip, params: Tuple[Any] = ()):
             notes = []

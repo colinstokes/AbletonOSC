@@ -7,7 +7,12 @@ from typing import Callable, Iterable
 
 REMOTE_PORT = 11000
 LOCAL_PORT = 11001
-TICK_DURATION = 0.125
+
+#--------------------------------------------------------------------------------
+# An Ableton Live tick is 100ms. This constant is typically used for timeouts,
+# and factors in some extra time for processing overhead.
+#--------------------------------------------------------------------------------
+TICK_DURATION = 0.150
 
 class AbletonOSCClient:
     def __init__(self, hostname="127.0.0.1", port=REMOTE_PORT, client_port=LOCAL_PORT):
@@ -50,9 +55,8 @@ class AbletonOSCClient:
                        address: str):
         del self.address_handlers[address]
 
-    def await_reply(self,
+    def await_message(self,
                     address: str,
-                    fn: Callable = None,
                     timeout: float = TICK_DURATION):
         """
         Awaits a reply from the given `address`, and optionally asserts that the function `fn`
@@ -68,56 +72,49 @@ class AbletonOSCClient:
             False otherwise
 
         """
+        rv = None
         _event = threading.Event()
 
         def received_response(params):
-            print("Received response: %s" % str(params))
+            print("Received response: %s %s" % (address, str(params)))
+            nonlocal rv
             nonlocal _event
-            if fn is None or fn(params):
-                _event.set()
+            rv = params
+            _event.set()
 
         self.add_handler(address, received_response)
         _event.wait(timeout)
         self.remove_handler(address)
-        return _event.is_set()
+        if not _event.is_set():
+            raise RuntimeError("No response received to query: %s" % address)
+        return rv
 
-    def query_and_await(self,
-                        address: str,
-                        params: tuple = (),
-                        fn: Callable = None,
-                        timeout: float = TICK_DURATION):
+    def query(self,
+              address: str,
+              params: tuple = (),
+              timeout: float = TICK_DURATION):
+        rv = None
         _event = threading.Event()
 
         def received_response(params):
+            nonlocal rv
             nonlocal _event
-            if fn is None or fn(params):
-                _event.set()
+            rv = params
+            _event.set()
 
         self.add_handler(address, received_response)
         self.send_message(address, params)
         _event.wait(timeout)
         self.remove_handler(address)
-        return _event.is_set()
-
-    def query_and_return(self,
-                         address: str,
-                         params: tuple = (),
-                         timeout: float = TICK_DURATION):
-        rv = None
-        def set_rv(values):
-            nonlocal rv
-            rv = values
-        self.query_and_await(address, params, set_rv, timeout)
-        if rv is not None and len(rv) == 1:
-            return rv[0]
-        else:
-            return rv
+        if not _event.is_set():
+            raise RuntimeError("No response received to query: %s" % address)
+        return rv
 
 def main(args):
     client = AbletonOSCClient(args.hostname, args.port)
     client.send_message("/live/song/set/tempo", [125.0])
-    tempo = client.query_and_return("/live/song/get/tempo")
-    print("Got song tempo: %.1f" % tempo)
+    tempo = client.query("/live/song/get/tempo")
+    print("Got song tempo: %.1f" % tempo[0])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Client for AbletonOSC")
