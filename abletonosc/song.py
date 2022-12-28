@@ -34,7 +34,7 @@ class SongHandler(AbletonOSCHandler):
             "tap_tempo",
             "trigger_session_record",
             "undo"
-        ]:
+            ]:
             callback = partial(self._call_method, self.song, method)
             self.osc_server.add_handler("/live/song/%s" % method, callback)
 
@@ -57,7 +57,6 @@ class SongHandler(AbletonOSCHandler):
             "punch_in",
             "punch_out",
             "record_mode",
-            "start_time",
             "tempo"
         ]
 
@@ -87,6 +86,8 @@ class SongHandler(AbletonOSCHandler):
                 track_index_min, track_index_max = 0, len(self.song.tracks)
             else:
                 track_index_min, track_index_max = params
+                if track_index_max == -1:
+                    track_index_max = len(self.song.tracks)
             return tuple(self.song.tracks[index].name for index in range(track_index_min, track_index_max))
         self.osc_server.add_handler("/live/song/get/track_names", song_get_track_names)
 
@@ -105,6 +106,8 @@ class SongHandler(AbletonOSCHandler):
              track_1_name, clip_1_0_name,   clip_1_1_name,   ... clip_1_7_name, ...]
             """
             track_index_min, track_index_max, *properties = params
+            if track_index_max == -1:
+                track_index_max = len(self.song.tracks)
             rv = []
             for track_index in range(track_index_min, track_index_max):
                 track = self.song.tracks[track_index]
@@ -146,7 +149,7 @@ class SongHandler(AbletonOSCHandler):
         def song_get_cue_points(song, _):
             cue_points = song.cue_points
             cue_point_pairs = [(cue_point.name, cue_point.time) for cue_point in cue_points]
-            return (element for pair in cue_point_pairs for element in pair)
+            return tuple(element for pair in cue_point_pairs for element in pair)
         self.osc_server.add_handler("/live/song/get/cue_points", partial(song_get_cue_points, self.song))
 
         def song_jump_to_cue_point(song, params: Tuple[Any] = ()):
