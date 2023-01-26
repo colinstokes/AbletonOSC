@@ -32,7 +32,14 @@ class AbletonOSCHandler(Component):
         setattr(target, prop, params[0])
 
     def _get_property(self, target, prop, params: Optional[Tuple] = ()) -> Tuple[Any]:
-        value = getattr(target, prop)
+        try:
+            value = getattr(target, prop)
+        except RuntimeError:
+            #--------------------------------------------------------------------------------
+            # Gracefully handle errors, which may occur when querying parameters that don't apply
+            # to a particular object (e.g. track.fold_state for a non-group track)
+            #--------------------------------------------------------------------------------
+            value = None
         self.logger.info("Getting property for %s: %s = %s" % (self.class_identifier, prop, value))
         return value,
 
@@ -52,6 +59,10 @@ class AbletonOSCHandler(Component):
         add_listener_function = getattr(target, add_listener_function_name)
         add_listener_function(property_changed_callback)
         self.listener_functions[listener_key] = property_changed_callback
+        #--------------------------------------------------------------------------------
+        # Immediately send the current value
+        #--------------------------------------------------------------------------------
+        property_changed_callback()
 
     def _stop_listen(self, target, prop, params: Optional[Tuple[Any]] = ()) -> None:
         listener_key = (prop, tuple(params))

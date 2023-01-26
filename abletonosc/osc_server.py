@@ -3,6 +3,7 @@ from .constants import OSC_LISTEN_PORT, OSC_RESPONSE_PORT
 from ..pythonosc.osc_message import OscMessage, ParseError
 from ..pythonosc.osc_message_builder import OscMessageBuilder, BuildError
 
+import re
 import errno
 import socket
 import logging
@@ -80,7 +81,7 @@ class OSCServer:
                 remote_addr = self._remote_addr
             self._socket.sendto(msg.dgram, remote_addr)
         except BuildError:
-            self.logger.info("AbletonOSC: OSC build error: %s" % (traceback.format_exc()))
+            self.logger.error("AbletonOSC: OSC build error: %s" % (traceback.format_exc()))
 
     def process(self) -> None:
         """
@@ -113,10 +114,35 @@ class OSCServer:
                             self.send(address=message.address,
                                       params=rv,
                                       remote_addr=response_addr)
+                    elif "*" in message.address:
+                        regex = message.address.replace("*", "[^/]+")
+                        for callback_address, callback in self._callbacks.items():
+                            if re.match(regex, callback_address):
+                                try:
+                                    rv = callback(message.params)
+                                except ValueError:
+                                    #--------------------------------------------------------------------------------
+                                    # Don't throw errors for queries that require more arguments
+                                    # (e.g. /live/track/get/send with no args)
+                                    #--------------------------------------------------------------------------------
+                                    continue
+                                except AttributeError:
+                                    #--------------------------------------------------------------------------------
+                                    # Don't throw errors when trying to create listeners for properties that can't
+                                    # be listened for (e.g. can_be_armed, is_foldable)
+                                    #--------------------------------------------------------------------------------
+                                    continue
+                                if rv is not None:
+                                    assert isinstance(rv, tuple)
+                                    remote_hostname, _ = remote_addr
+                                    response_addr = (remote_hostname, self._response_port)
+                                    self.send(address=callback_address,
+                                              params=rv,
+                                              remote_addr=response_addr)
                     else:
-                        self.logger.info("AbletonOSC: Unknown OSC address: %s" % message.address)
+                        self.logger.error("AbletonOSC: Unknown OSC address: %s" % message.address)
                 except ParseError:
-                    self.logger.info("AbletonOSC: OSC parse error: %s" % (traceback.format_exc()))
+                    self.logger.error("AbletonOSC: OSC parse error: %s" % (traceback.format_exc()))
 
         except socket.error as e:
             if e.errno == errno.ECONNRESET:
@@ -134,10 +160,11 @@ class OSCServer:
                 #--------------------------------------------------------------------------------
                 # Something more serious has happened
                 #--------------------------------------------------------------------------------
-                self.logger.info("AbletonOSC: Socket error: %s" % (traceback.format_exc()))
+                self.logger.error("AbletonOSC: Socket error: %s" % (traceback.format_exc()))
 
         except Exception as e:
-            self.logger.info("AbletonOSC: Error handling message: %s" % (traceback.format_exc()))
+            self.logger.error("AbletonOSC: Error handling OSC message: %s" % e)
+            self.logger.warning("AbletonOSC: %s" % traceback.format_exc())
 
     def shutdown(self) -> None:
         """

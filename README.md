@@ -9,7 +9,7 @@ entire [Live Object Model](https://docs.cycling74.com/max8/vignettes/live_object
 ([full API docs](https://structure-void.com/PythonLiveAPI_documentation/Live11.0.xml), providing comprehensive control
 over Live's control interfaces using the same naming structure and object hierarchy as LOM.
 
-AbletonOSC is currently (2022-11-20) a work-in-progress, and APIs may be subject to change. Many major APIs are now exposed.
+AbletonOSC is currently (2023-01-07) a work-in-progress, and APIs may be subject to change. Many major APIs are now exposed.
 
 **NOTE: Since 2022-12-17, all getters have been modified to return the ID of the object being queried as well as the return value**, for consistency with listeners. For example, `/live/clip/get/name` will return `track_id, clip_id, name`.
 
@@ -32,7 +32,7 @@ Activity logs will be output to a `logs` subdirectory.
 # Usage
 
 AbletonOSC listens for OSC messages on port **11000**, and sends replies on port **11001**. Replies will be sent to the
-same IP as the originating message.
+same IP as the originating message. When querying properties, OSC wildcard patterns can be used; for example, `/live/clip/get/* 0 0` will query all the properties of track 0, clip 0.
 
 ## Application API
 
@@ -49,9 +49,10 @@ same IP as the originating message.
 
 These messages are sent to the client automatically when the application state changes.
 
-| Address       | Response params | Description                                               |
-|:--------------|:----------------|:----------------------------------------------------------|
-| /live/startup |                 | Sent to the client application when AbletonOSC is started |
+| Address       | Response params | Description                                                                                        |
+|:--------------|:----------------|:---------------------------------------------------------------------------------------------------|
+| /live/startup |                 | Sent to the client application when AbletonOSC is started                                          |
+| /live/error   | error_msg       | Sent to the client application when an error occurs. For more diagnostics, see logs/abletonosc.log |
 
 </details>
 
@@ -119,6 +120,8 @@ for [Live Object Model - Song](https://docs.cycling74.com/max8/vignettes/live_ob
 | /live/song/get/punch_in                    |              | punch_in                    | Query punch in                                    |
 | /live/song/get/punch_out                   |              | punch_out                   | Query punch out                                   |
 | /live/song/get/record_mode                 |              | record_mode                 | Query the current record mode                     |
+| /live/song/get/signature_denominator       |              | denominator                 | Query the current time signature's denominator    |
+| /live/song/get/signature_numerator         |              | numerator                   | Query the current time signature's numerator      |
 | /live/song/get/tempo                       |              | tempo_bpm                   | Query the current song tempo                      |
 
 #### Setters
@@ -140,15 +143,40 @@ for [Live Object Model - Song](https://docs.cycling74.com/max8/vignettes/live_ob
 | /live/song/set/punch_in                    | punch_in                    |                 | Set punch in                                    |
 | /live/song/set/punch_out                   | punch_out                   |                 | Set punch out                                   |
 | /live/song/set/record_mode                 | record_mode                 |                 | Set the current record mode                     |
+| /live/song/set/signature_denominator       | signature_denominator       |                 | Set the time signature's denominator            |
+| /live/song/set/signature_numerator         | signature_numerator         |                 | Set the time signature's numerator              |
+| /live/song/set/record_mode                 | record_mode                 |                 | Set the current record mode                     |
 | /live/song/set/tempo                       | tempo_bpm                   |                 | Set the current song tempo                      |
 
 ### Song: Properties of cue points, scenes and tracks
 
-| Address                            | Query params | Response params | Description                                                                                  |
-|:-----------------------------------|:-------------|:----------------|:---------------------------------------------------------------------------------------------|
-| /live/song/get/cue_points          |              | name, time, ... | Query a list of the song's cue points                                                        |
-| /live/song/get/num_scenes          |              | num_scenes      | Query the number of scenes                                                                   | 
-| /live/song/get/num_tracks          |              | num_tracks      | Query the number of tracks                                                                   | 
+| Address                    | Query params | Response params        | Description                                                                 |
+|:---------------------------|:-------------|:-----------------------|:----------------------------------------------------------------------------|
+| /live/song/get/cue_points  |              | name, time, ...        | Query a list of the song's cue points                                       |
+| /live/song/get/num_scenes  |              | num_scenes             | Query the number of scenes                                                  | 
+| /live/song/get/num_tracks  |              | num_tracks             | Query the number of tracks                                                  | 
+| /live/song/get/track_names |              | [index_min, index_max] | Query track names (optionally, over a given range)                          | 
+| /live/song/get/track_data  |              | [various]              | Query bulk properties of multiple tracks/clips. See below for further info. | 
+
+
+#### Querying track/clip data in bulk with /live/song/get/track_data
+
+It is often useful to be able to query data en masse about lots of different tracks and clips -- for example, when a set is first opened, to synchronise the state of your client with the Ableton set. This can be achieved with the `/live/song/get/track_data` API, which can query user-specified properties of multiple tracks and clips.
+
+Properties must be of the format `track.property_name` or `clip.property_name`.
+
+For example:
+```
+/live/song/get/track_data 0 12 track.name clip.name clip.length
+```
+
+Queries tracks 0..11, and returns a long list of values comprising:
+
+```
+[track_0_name, clip_0_0_name,   clip_0_1_name,   ... clip_0_7_name,
+               clip_1_0_length, clip_0_1_length, ... clip_0_7_length,
+ track_1_name, clip_1_0_name,   clip_1_1_name,   ... clip_1_7_name, ...]
+```
 
 ### Song status messages
 
@@ -165,6 +193,8 @@ These messages are sent to the client automatically when the song state changes.
 ## Track API
 
 Represents an audio, MIDI, return or master track. Can be used to set track audio parameters (volume, panning, send, mute, solo), listen for the playing clip slot, query devices, etc. Can also be used to query clips in arrangement view.
+
+To query the properties of multiple tracks, see [Song: Properties of cue points, scenes and tracks](https://github.com/ideoforms/AbletonOSC#song-properties-of-cue-points-scenes-and-tracks).
 
 <details>
 <summary><b>Documentation</b>: Track API</summary>
@@ -312,19 +342,20 @@ Represents an instrument or effect.
 <details>
 <summary><b>Documentation</b>: Device API</summary>
 
-| Address                           | Query params                             | Response params                          | Description                                           |
-|:----------------------------------|:-----------------------------------------|:-----------------------------------------|:------------------------------------------------------|
-| /live/device/get/name             | track_id, device_id                      | track_id, device_id, name                | Get device name                                       |
-| /live/device/get/class_name       | track_id, device_id                      | track_id, device_id, class_name          | Get device class_name                                 |
-| /live/device/get/type             | track_id, device_id                      | track_id, device_id, type                | Get device type                                       |
-| /live/device/get/num_parameters   | track_id, device_id                      | track_id, device_id, num_parameters      | Get the number of parameters exposed by the device    |
-| /live/device/get/parameters/name  | track_id, device_id                      | track_id, device_id, [name, ...]         | Get the list of parameter names exposed by the device |
-| /live/device/get/parameters/value | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter values                       |
-| /live/device/get/parameters/min   | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter minimum values               |
-| /live/device/get/parameters/max   | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter maximum values               |
-| /live/device/set/parameters/value | track_id, device_id, value, value ...    |                                          | Set the device parameter values                       |
-| /live/device/get/parameter/value  | track_id, device_id, parameter_id        | track_id, device_id, parameter_id, value | Get a device parameter value                          |
-| /live/device/set/parameter/value  | track_id, device_id, parameter_id, value |                                          | Set a device parameter value                          |
+| Address                                  | Query params                             | Response params                          | Description                                                                             |
+|:-----------------------------------------|:-----------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------|
+| /live/device/get/name                    | track_id, device_id                      | track_id, device_id, name                | Get device name                                                                         |
+| /live/device/get/class_name              | track_id, device_id                      | track_id, device_id, class_name          | Get device class_name                                                                   |
+| /live/device/get/type                    | track_id, device_id                      | track_id, device_id, type                | Get device type                                                                         |
+| /live/device/get/num_parameters          | track_id, device_id                      | track_id, device_id, num_parameters      | Get the number of parameters exposed by the device                                      |
+| /live/device/get/parameters/name         | track_id, device_id                      | track_id, device_id, [name, ...]         | Get the list of parameter names exposed by the device                                   |
+| /live/device/get/parameters/value        | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter values                                                         |
+| /live/device/get/parameters/min          | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter minimum values                                                 |
+| /live/device/get/parameters/max          | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter maximum values                                                 |
+| /live/device/get/parameters/is_quantized | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the list of is_quantized settings (i.e., whether the parameter must be an int/bool) |
+| /live/device/set/parameters/value        | track_id, device_id, value, value ...    |                                          | Set the device parameter values                                                         |
+| /live/device/get/parameter/value         | track_id, device_id, parameter_id        | track_id, device_id, parameter_id, value | Get a device parameter value                                                            |
+| /live/device/set/parameter/value         | track_id, device_id, parameter_id, value |                                          | Set a device parameter value                                                            |
 
 For devices:
 
@@ -358,3 +389,9 @@ Thanks to [Stu Fisher](https://github.com/stufisher/) (and other authors) for Li
 library. Thanks to [Julien Bayle](https://structure-void.com/ableton-live-midi-remote-scripts/#liveAPI)
 and [NSUSpray](https://nsuspray.github.io/Live_API_Doc/) for providing XML API docs, based on original work
 by [Hans Petrov](http://remotescripts.blogspot.com/p/support-files.html).
+
+For code contributions and feedback, many thanks to:
+- Jörn Lengwenings ([Coupe70](https://github.com/Coupe70))
+- Bill Moser ([billmoser](https://github.com/billmoser))
+- [stevmills](https://github.com/stevmills)
+- Marco Buongiorno Nardelli ([marcobn](https://github.com/marcobn)) and Colin Stokes
